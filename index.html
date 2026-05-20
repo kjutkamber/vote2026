@@ -226,6 +226,7 @@
       <div class="btn-row">
         <button class="btn btn-outline btn-sm" onclick="previewPoll()">👁 Pregled</button>
         <button class="btn btn-sm" onclick="activatePoll()">▶ Aktiviraj</button>
+        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="ukloniAnketu()">✕ Ukloni anketu</button>
       </div>
     </div>
 
@@ -292,6 +293,7 @@
   };
 
   let activePoll = DEFAULT_POLL;
+  window.DEFAULT_POLL = DEFAULT_POLL;
 
   async function testirajKonekcijuSaBazom() {
     const dot = document.getElementById('status-dot');
@@ -317,7 +319,7 @@
     updatePollToggleUI();
     updateModeUI();
     pretplatiSeNaPromene();
-    if (window._votingMode !== 'location' && localStorage.getItem('glasanje_status') === 'glasao') {
+    if (window._votingMode !== 'location' && localStorage.getItem('glasanje_status_' + (activePoll.id || 'default')) === 'glasao') {
       prikaziPorukuKraj('Već ste iskoristili pravo glasanja sa ovog uređaja.');
     }
   });
@@ -398,8 +400,12 @@
       const { data, error } = await db.from('studenti').select('student_id,glasao').ilike('ime_prezime', ime).ilike('student_id', indeks).maybeSingle();
       if (error) throw error;
       if (!data) { setAlert('login-alert', 'Niste na spisku ili su podaci pogrešni. Pripazite na tačnost karaktera.', 'error'); return; }
-      const naLokaciji = window._votingMode === 'location';
-      if (data.glasao === true) { setAlert('login-alert', 'Već ste iskoristili svoje pravo glasanja!', 'warn'); return; }
+      const pollId = activePoll.id || 'default';
+      const glasaoIds = (data.glasao || '').toString().split(',').map(s => s.trim()).filter(Boolean);
+      if (glasaoIds.includes(pollId)) {
+        setAlert('login-alert', 'Već ste iskoristili svoje pravo glasanja za ovu anketu!', 'warn');
+        return;
+      }
       currentStudentId = data.student_id;
       showScreen('screen-vote');
     } catch (err) {
@@ -411,21 +417,40 @@
   }
 
   function renderVoteScreen() {
-    // If Google Forms is activated, switch vote screen to show iframe
     const formsActive = window._formsActive || false;
     const formsUrl = window._formsUrl || null;
+    const container = document.getElementById('options-container');
+    const btnVote = document.getElementById('btn-vote');
+
+    // Remove any previously added "Nazad" button to avoid duplicates
+    const oldNazad = document.getElementById('btn-nazad-forms');
+    if (oldNazad) oldNazad.remove();
+
     if (formsActive && formsUrl) {
-      document.getElementById('vote-title').textContent = activePoll.title || 'Glasanje';
+      document.getElementById('vote-title').textContent = 'Google Forms';
       document.getElementById('vote-subtitle').textContent = 'Popunite formular ispod.';
-      const container = document.getElementById('options-container');
       container.innerHTML = '<iframe src="' + formsUrl + '" style="width:100%;height:480px;border:none;border-radius:10px;display:block"></iframe>';
-      document.getElementById('btn-vote').style.display = 'none';
+      btnVote.style.display = 'none';
+      // Add "Nazad na početnu" button below iframe
+      const nazad = document.createElement('button');
+      nazad.id = 'btn-nazad-forms';
+      nazad.className = 'btn btn-outline';
+      nazad.style.marginTop = '12px';
+      nazad.textContent = '← Nazad na početnu';
+      nazad.onclick = () => {
+        currentStudentId = null;
+        document.getElementById('ime').value = '';
+        document.getElementById('indeks').value = '';
+        showScreen('screen-login');
+      };
+      btnVote.parentNode.insertBefore(nazad, btnVote.nextSibling);
       return;
     }
-    document.getElementById('btn-vote').style.display = '';
+
+    // Standard poll
+    btnVote.style.display = '';
     document.getElementById('vote-title').textContent = activePoll.title || 'Glasajte';
     document.getElementById('vote-subtitle').textContent = activePoll.desc || '';
-    const container = document.getElementById('options-container');
     container.innerHTML = '';
     (activePoll.options || []).forEach(opt => {
       const lbl = document.createElement('label');
@@ -443,7 +468,13 @@
     setLoading('btn-vote', true, 'Beležim glas…');
     try {
       const naLokaciji = window._votingMode === 'location';
-      const markResult = await db.from('studenti').update({ glasao: true }).eq('student_id', currentStudentId);
+      // Fetch existing glasao string and append current poll_id
+      const { data: studentData } = await db.from('studenti').select('glasao').eq('student_id', currentStudentId).maybeSingle();
+      const existingIds = (studentData?.glasao || '').toString().split(',').map(s => s.trim()).filter(Boolean);
+      const pollId = activePoll.id || 'default';
+      if (!existingIds.includes(pollId)) existingIds.push(pollId);
+      const newGlasao = existingIds.join(', ');
+      const markResult = await db.from('studenti').update({ glasao: newGlasao }).eq('student_id', currentStudentId);
       if (markResult.error) throw markResult.error;
       const voteResult = await db.from('glasovi').insert({ izbor: selected.value, poll_id: activePoll.id || 'default' });
       if (voteResult.error) throw voteResult.error;
@@ -454,7 +485,7 @@
         showScreen('screen-login');
         setAlert('login-alert', '✅ Glas je zabeležen! Sledeći glasač može pristupiti.', 'success');
       } else {
-        localStorage.setItem('glasanje_status', 'glasao');
+        localStorage.setItem('glasanje_status_' + (activePoll.id || 'default'), 'glasao');
         showScreen('screen-done');
       }
     } catch (err) {
@@ -526,13 +557,19 @@
     clearAlert('admin-alert');
     setLoading('btn-refresh', true, 'Učitavam…');
     try {
+      if (window._formsActive) {
+        document.getElementById('total-label').textContent = '';
+        document.getElementById('results-container').innerHTML = '<div style="text-align:center;padding:32px 16px;color:var(--ink-soft);font-size:15px">📋 Rezultati se nalaze na stranici Google Forme.</div>';
+        setLoading('btn-refresh', false, '↻ Osveži');
+        return;
+      }
       const { data, error } = await db.from('glasovi').select('izbor').eq('poll_id', activePoll.id || 'default');
       if (error) throw error;
       const counts = {};
       (activePoll.options || []).forEach(o => counts[o.value] = 0);
       const JUNK_RE = /^\$\{.*\}$/;
       (data || []).forEach(row => {
-        if (!row.izbor || JUNK_RE.test(row.izbor)) return; // skip corrupted entries
+        if (!row.izbor || JUNK_RE.test(row.izbor)) return;
         if (row.izbor in counts) counts[row.izbor]++;
         else counts[row.izbor] = (counts[row.izbor] || 0) + 1;
       });
@@ -557,7 +594,7 @@
       requestAnimationFrame(() => {
         document.querySelectorAll('.result-bar').forEach(bar => { bar.style.width = bar.dataset.pct + '%'; });
       });
-      saveToHistory({ title: activePoll.title, date: new Date().toISOString(), total, counts });
+      saveToHistory({ title: activePoll.title, pollId: activePoll.id, date: new Date().toISOString(), total, counts });
     } catch (err) {
       console.error(err);
       setAlert('admin-alert', 'Greška pri učitavanju rezultata.', 'error');
@@ -572,7 +609,7 @@
 
   async function saveToHistory(snapshot) {
     const existing = await cfgGet('poll_history') || [];
-    const idx = existing.findIndex(h => (h.title||'') === (snapshot.title||''));
+    const idx = existing.findIndex(h => snapshot.pollId ? h.pollId === snapshot.pollId : (h.title||'') === (snapshot.title||''));
     if (idx !== -1) {
       existing[idx] = snapshot;
     } else {
@@ -655,6 +692,15 @@
     renderVoteScreen();
     await cfgSet('active_poll', activePoll);
     setAlert('create-alert', `✅ Anketa "${data.title}" je aktivirana!`, 'success');
+  }
+
+  async function ukloniAnketu() {
+    if (!confirm('Ukloniti aktivnu anketu? Glasači neće videti opcije za glasanje.')) return;
+    activePoll = { ...window.DEFAULT_POLL };
+    renderVoteScreen();
+    initPollBuilder();
+    await cfgSet('active_poll', activePoll);
+    setAlert('create-alert', 'Anketa je uklonjena.', 'warn');
   }
 
 
