@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Studentsko Glasanje</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    /* ── Design tokens ─────────────────────────────────────────── */
+    :root {
+      --ink:        #0f1117;
+      --ink-soft:   #454a57;
+      --paper:      #f7f5f0;
+      --card:       #ffffff;
+      --border:     #e2ddd5;
+      --accent:     #1a472a;       /* deep forest green */
+      --accent-lit: #2d6a4f;
+      --accent-bg:  #eaf3ee;
+      --danger:     #c0392b;
+      --danger-bg:  #fdf0ee;
+      --warn:       #7d5a00;
+      --warn-bg:    #fdf6e3;
+      --success:    #1a472a;
+      --success-bg: #eaf3ee;
+      --radius:     16px;
+      --shadow:     0 4px 32px rgba(15,17,23,.08), 0 1px 4px rgba(15,17,23,.05);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      /* subtle dot grid */
+      background-image: radial-gradient(circle, #c8c2b8 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+
+    /* ── Card ───────────────────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      width: 100%;
+      max-width: 440px;
+      padding: 40px 36px;
+      animation: rise .45s cubic-bezier(.22,.68,0,1.2) both;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(20px) scale(.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* ── Header badge ───────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-bg);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 99px;
+      margin-bottom: 18px;
+    }
+    .badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: .4; }
+    }
+
+    /* ── Typography ─────────────────────────────────────────────── */
+    h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 26px;
+      line-height: 1.2;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: var(--ink-soft);
+      margin-bottom: 32px;
+      line-height: 1.5;
+    }
+
+    /* ── Form controls ──────────────────────────────────────────── */
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+      margin-bottom: 6px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      color: var(--ink);
+      background: var(--paper);
+      transition: border-color .2s, box-shadow .2s;
+      outline: none;
+      margin-bottom: 20px;
+    }
+    input[type="text"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(26,71,42,.12);
+      background: #fff;
+    }
+
+    /* ── Primary button ─────────────────────────────────────────── */
+    .btn {
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s, transform .1s, box-shadow .2s;
+      box-shadow: 0 2px 12px rgba(26,71,42,.25);
+      letter-spacing: .02em;
+    }
+    .btn:hover:not(:disabled) {
+      background: var(--accent-lit);
+      box-shadow: 0 4px 20px rgba(26,71,42,.30);
+    }
+    .btn:active:not(:disabled) { transform: scale(.98); }
+    .btn:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
+
+    /* ── Alerts ─────────────────────────────────────────────────── */
+    .alert {
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .alert.show { display: block; animation: rise .3s ease both; }
+    .alert-error   { background: var(--danger-bg); color: var(--danger);  border: 1px solid #f5c6c2; }
+    .alert-warn    { background: var(--warn-bg);   color: var(--warn);    border: 1px solid #f0d9a0; }
+    .alert-success { background: var(--success-bg); color: var(--success); border: 1px solid #b7ddc5; }
+
+    /* ── Loading spinner ────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Radio options ──────────────────────────────────────────── */
+    .options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+    .option {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 18px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      user-select: none;
+    }
+    .option:hover { border-color: var(--accent); background: var(--accent-bg); }
+    .option input[type="radio"] { display: none; }
+    .radio-dot {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: border-color .2s;
+    }
+    .radio-dot::after {
+      content: '';
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--accent);
+      transform: scale(0);
+      transition: transform .2s cubic-bezier(.34,1.56,.64,1);
+    }
+    .option input[type="radio"]:checked ~ .radio-dot {
+      border-color: var(--accent);
+    }
+    .option input[type="radio"]:checked ~ .radio-dot::after { transform: scale(1); }
+    .option:has(input:checked) {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+    }
+    .option-label { font-size: 16px; font-weight: 500; }
+    .option-icon  { font-size: 20px; }
+
+    /* ── Divider ────────────────────────────────────────────────── */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 28px 0;
+    }
+
+    /* ── Success screen ─────────────────────────────────────────── */
+    .success-icon {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: var(--accent-bg);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+      margin: 0 auto 20px;
+    }
+    .center { text-align: center; }
+
+    /* ── Admin panel ────────────────────────────────────────────── */
+    .results-grid { display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px; }
+    .result-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .result-label { font-size: 15px; font-weight: 500; min-width: 90px; }
+    .result-bar-wrap {
+      flex: 1;
+      height: 10px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .result-bar {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 99px;
+      transition: width .8s cubic-bezier(.22,.68,0,1);
+    }
+    .result-count {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+      min-width: 60px;
+      text-align: right;
+    }
+    .total-badge {
+      font-size: 13px;
+      color: var(--ink-soft);
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    /* ── Admin link ─────────────────────────────────────────────── */
+    .admin-link {
+      display: block;
+      text-align: center;
+      font-size: 12px;
+      color: #bbb;
+      margin-top: 32px;
+      text-decoration: none;
+      letter-spacing: .05em;
+      transition: color .2s;
+    }
+    .admin-link:hover { color: var(--ink-soft); }
+
+    /* ── Screens ────────────────────────────────────────────────── */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* ── Mobile tweaks ──────────────────────────────────────────── */
+    @media (max-width: 480px) {
+      .card { padding: 32px 22px; }
+      h1    { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+
+  <div id="screen-login" class="screen active">
+    <div class="badge">Anonimno glasanje</div>
+    <h1>Studentski portal<br>za glasanje</h1>
+    <p class="subtitle">Unesite vaše podatke da biste pristupili glasanju. Vaš identitet neće biti vezan za vaš glas.</p>
+
+    <div id="login-alert" class="alert"></div>
+
+    <label for="ime">Ime i prezime</label>
+    <input type="text" id="ime" placeholder="npr. Marko Marković" autocomplete="name" />
+
+    <label for="indeks">Broj indeksa</label>
+    <input type="text" id="indeks" placeholder="npr. SV-123/2022" autocomplete="off" />
+
+    <button class="btn" id="btn-login" onclick="handleLogin()">Nastavi na glasanje</button>
+
+    <a href="#admin" class="admin-link" onclick="showAdmin(event)">● admin</a>
+  </div>
+
+  <div id="screen-vote" class="screen">
+    <div class="badge">Vaš glas</div>
+    <h1>Glasajte</h1>
+    <p class="subtitle">Izaberite jednu od ponuđenih opcija i potvrdite vaš glas. Ova radnja je nepovratna.</p>
+
+    <div id="vote-alert" class="alert"></div>
+
+    <div class="options" id="options-container">
+      <label class="option">
+        <input type="radio" name="izbor" value="DA" />
+        <div class="radio-dot"></div>
+        <span class="option-icon">✅</span>
+        <span class="option-label">DA</span>
+      </label>
+      <label class="option">
+        <input type="radio" name="izbor" value="NE" />
+        <div class="radio-dot"></div>
+        <span class="option-icon">❌</span>
+        <span class="option-label">NE</span>
+      </label>
+      <label class="option">
+        <input type="radio" name="izbor" value="UZDRŽAN" />
+        <div class="radio-dot"></div>
+        <span class="option-icon">⚖️</span>
+        <span class="option-label">UZDRŽAN</span>
+      </label>
+    </div>
+
+    <button class="btn" id="btn-vote" onclick="handleVote()">Potvrdi i glasaj</button>
+  </div>
+
+  <div id="screen-done" class="screen">
+    <div class="center">
+      <div class="success-icon">🗳️</div>
+      <h1>Glas zabeležen!</h1>
+      <p class="subtitle" style="margin-top:10px">Vaš glas je uspešno i anonimno zabeležen. Hvala na učešću.</p>
+    </div>
+  </div>
+
+  <div id="screen-admin" class="screen">
+    <div class="badge">Admin panel</div>
+    <h1>Rezultati glasanja</h1>
+    <p class="subtitle">Ukupan broj glasova u realnom vremenu po opcijama.</p>
+
+    <div id="admin-alert" class="alert"></div>
+
+    <div class="total-badge" id="total-label">Ukupno glasova: —</div>
+    <div class="results-grid" id="results-container">
+      </div>
+
+    <button class="btn" onclick="loadResults()" id="btn-refresh">↻ Osveži rezultate</button>
+
+    <hr class="divider" />
+
+    <button class="btn" style="background:#f3f3f3;color:var(--ink);box-shadow:none" onclick="showScreen('screen-login')">
+      ← Nazad na login
+    </button>
+  </div>
+
+</div><script>
+  // ── Konfiguracija Supabase (Automatski popunjeno tvojim podacima) ──
+  const SUPABASE_URL      = 'https://kmuiyudeepmrvyjhyjem.supabase.co';   
+  const SUPABASE_ANON_KEY = 'sb_publishable_HEWUOT6Gv-zhOqrYDe4Vug_1rUgNDdQ';  
+  const ADMIN_PASSWORD    = 'admin123'; // <-- slobodno promeni lozinku ovde po želji
+
+  // ── Init ───────────────────────────────────────────────────────
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Indeks studenta u memoriji (ne čuva se nigde trajno)
+  let currentStudentId = null;
+
+  // Ako je uređaj već uspešno glasao, odmah zaključaj ekran na startu
+  if (localStorage.getItem('glasanje_status') === 'glasao') {
+      prikaziPorukuKraj("Već ste iskoristili pravo glasanja sa ovog uređaja.");
+  }
+
+  // ── Pomoćne funkcije ───────────────────────────────────────────
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function setAlert(id, msg, type) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.className = `alert alert-${type} show`;
+  }
+
+  function clearAlert(id) {
+    const el = document.getElementById(id);
+    el.className = 'alert';
+    el.textContent = '';
+  }
+
+  function setLoading(btnId, loading, text = '') {
+    const btn = document.getElementById(btnId);
+    btn.disabled = loading;
+    btn.innerHTML = loading
+      ? `<span class="spinner"></span>${text}`
+      : text;
+  }
+
+  function prikaziPorukuKraj(poruka) {
+    setTimeout(() => {
+        const card = document.querySelector('.card');
+        card.innerHTML = `
+          <div class="center">
+            <div class="success-icon" style="background: var(--warn-bg); color: var(--warn);">⚠️</div>
+            <h1>Pristup onemogućen</h1>
+            <p class="subtitle" style="margin-top:10px">${poruka}</p>
+          </div>
+        `;
+    }, 50);
+  }
+
+  // ── Ekran 1: Login ─────────────────────────────────────────────
+  async function handleLogin() {
+    clearAlert('login-alert');
+
+    const ime      = document.getElementById('ime').value.trim();
+    const indeks   = document.getElementById('indeks').value.trim();
+
+    if (!ime || !indeks) {
+      setAlert('login-alert', 'Molimo unesite i ime i broj indeksa.', 'error');
+      return;
+    }
+
+    setLoading('btn-login', true, 'Proveravam podatke…');
+
+    try {
+      const { data, error } = await db
+        .from('studenti')
+        .select('student_id, glasao')
+        .ilike('ime_prezime', ime)
+        .eq('student_id', indeks)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (!data) {
+        setAlert('login-alert', 'Niste na spisku ili su podaci pogrešni.', 'error');
+        return;
+      }
+
+      if (data.glasao === true) {
+        setAlert('login-alert', 'Već ste iskoristili svoje pravo glasanja!', 'warn');
+        return;
+      }
+
+      // Uspešan login — pamtimo indeks samo u memoriji
+      currentStudentId = indeks;
+      showScreen('screen-vote');
+
+    } catch (err) {
+      console.error(err);
+      setAlert('login-alert', 'Greška pri povezivanju. Proverite konekciju.', 'error');
+    } finally {
+      setLoading('btn-login', false, 'Nastavi na glasanje');
+    }
+  }
+
+  // ── Ekran 2: Glasanje ──────────────────────────────────────────
+  async function handleVote() {
+    clearAlert('vote-alert');
+
+    const selected = document.querySelector('input[name="izbor"]:checked');
+    if (!selected) {
+      setAlert('vote-alert', 'Molimo izaberite jednu opciju pre potvrde.', 'error');
+      return;
+    }
+
+    if (!currentStudentId) {
+      setAlert('vote-alert', 'Sesija je istekla. Molimo prijavite se ponovo.', 'error');
+      return;
+    }
+
+    setLoading('btn-vote', true, 'Beležim glas…');
+
+    try {
+      // Dve ODVOJENE i nezavisne operacije izvršavaju se u isto vreme
+      const [markResult, voteResult] = await Promise.all([
+
+        // 1. Označi studenta kao glasao (via student_id)
+        db
+          .from('studenti')
+          .update({ glasao: true })
+          .eq('student_id', currentStudentId),
+
+        // 2. Upiši samo izabrani tekst — bez ikakvih metapodataka o studentu
+        db
+          .from('glasovi')
+          .insert({ izbor: selected.value })
+      ]);
+
+      if (markResult.error) throw markResult.error;
+      if (voteResult.error) throw voteResult.error;
+
+      // Zabeležimo u localStorage da je ovaj uređaj glasao
+      localStorage.setItem('glasanje_status', 'glasao');
+
+      // Obrišemo indeks iz memorije
+      currentStudentId = null;
+
+      showScreen('screen-done');
+
+    } catch (err) {
+      console.error(err);
+      setAlert('vote-alert', 'Greška pri beleženju glasa. Pokušajte ponovo.', 'error');
+    } finally {
+      setLoading('btn-vote', false, 'Potvrdi i glasaj');
+    }
+  }
+
+  // ── Admin panel ────────────────────────────────────────────────
+  function showAdmin(e) {
+    e.preventDefault();
+    
+    const unesenaLozinka = prompt("Unesite admin lozinku za pristup rezultatima:");
+    
+    if (unesenaLozinka === ADMIN_PASSWORD) {
+        showScreen('screen-admin');
+        loadResults();
+    } else if (unesenaLozinka !== null) {
+        alert("Netačna lozinka!");
+    }
+  }
+
+  async function loadResults() {
+    clearAlert('admin-alert');
+    setLoading('btn-refresh', true, 'Učitavam…');
+
+    try {
+      const { data, error } = await db
+        .from('glasovi')
+        .select('izbor');
+
+      if (error) throw error;
+
+      // Uvek prikazujemo sve tri opcije, čak i ako imaju 0 glasova
+      const counts = { "DA": 0, "NE": 0, "UZDRŽAN": 0 };
+      
+      (data || []).forEach(row => {
+        if (row.izbor in counts) {
+          counts[row.izbor]++;
+        } else {
+          counts[row.izbor] = 1;
+        }
+      });
+
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      document.getElementById('total-label').textContent = `Ukupno glasova: ${total}`;
+
+      const container = document.getElementById('results-container');
+      container.innerHTML = '';
+
+      if (total === 0) {
+        setAlert('admin-alert', 'Još uvek nema zabeleženih glasova.', 'warn');
+      }
+
+      // Sortiraj opcije po broju glasova (opadajuće)
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+      sorted.forEach(([opcija, broj]) => {
+        const pct = total > 0 ? Math.round((broj / total) * 100) : 0;
+        const row = document.createElement('div');
+        row.className = 'result-row';
+        row.innerHTML = `
+          <span class="result-label">${escHtml(opcija)}</span>
+          <div class="result-bar-wrap">
+            <div class="result-bar" style="width:0%" data-pct="${pct}"></div>
+          </div>
+          <span class="result-count">${broj} (${pct}%)</span>
+        `;
+        container.appendChild(row);
+      });
+
+      // Animiraj trake nakon render-a
+      requestAnimationFrame(() => {
+        document.querySelectorAll('.result-bar').forEach(bar => {
+          bar.style.width = bar.dataset.pct + '%';
+        });
+      });
+
+    } catch (err) {
+      console.error(err);
+      setAlert('admin-alert', 'Greška pri učitavanju rezultata.', 'error');
+    } finally {
+      setLoading('btn-refresh', false, '↻ Osveži rezultate');
+    }
+  }
+
+  function escHtml(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Enter taster na login formi ─────────────────────────────────
+  ['ime', 'indeks'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', e => {
+      if (e.key === 'Enter') handleLogin();
+    });
+  });
+</script>
+</body>
+</html>
