@@ -41,10 +41,36 @@
       align-items: center;
       justify-content: center;
       padding: 24px 16px;
-      /* subtle dot grid */
       background-image: radial-gradient(circle, #c8c2b8 1px, transparent 1px);
       background-size: 28px 28px;
     }
+
+    /* ── Indikator Konekcije ────────────────────────────────────── */
+    .connection-status {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 30px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+      z-index: 9999;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f1c40f; /* default zuto */
+    }
+    .status-dot.checking { background: #f1c40f; animation: pulse 1.5s infinite; }
+    .status-dot.connected { background: #2ecc71; box-shadow: 0 0 8px #2ecc71; }
+    .status-dot.disconnected { background: #e74c3c; box-shadow: 0 0 8px #e74c3c; }
 
     /* ── Card ───────────────────────────────────────────────────── */
     .card {
@@ -309,6 +335,11 @@
 </head>
 <body>
 
+<div class="connection-status">
+  <div id="status-dot" class="status-dot checking"></div>
+  <span id="status-text">Povezivanje...</span>
+</div>
+
 <div class="card">
 
   <div id="screen-login" class="screen active">
@@ -322,7 +353,7 @@
     <input type="text" id="ime" placeholder="npr. Marko Marković" autocomplete="name" />
 
     <label for="indeks">Broj indeksa</label>
-    <input type="text" id="indeks" placeholder="npr. SV-123/2022" autocomplete="off" />
+    <input type="text" id="indeks" placeholder="npr. TEST-001" autocomplete="off" />
 
     <button class="btn" id="btn-login" onclick="handleLogin()">Nastavi na glasanje</button>
 
@@ -376,35 +407,58 @@
     <div id="admin-alert" class="alert"></div>
 
     <div class="total-badge" id="total-label">Ukupno glasova: —</div>
-    <div class="results-grid" id="results-container">
-      </div>
+    <div class="results-grid" id="results-container"></div>
 
     <button class="btn" onclick="loadResults()" id="btn-refresh">↻ Osveži rezultate</button>
-
     <hr class="divider" />
-
     <button class="btn" style="background:#f3f3f3;color:var(--ink);box-shadow:none" onclick="showScreen('screen-login')">
       ← Nazad na login
     </button>
   </div>
 
-</div><script>
-  // ── Konfiguracija Supabase (Automatski popunjeno tvojim podacima) ──
+</div>
+
+<script>
+  // ── Konfiguracija Supabase ─────────────────────────────────────
   const SUPABASE_URL      = 'https://kmuiyudeepmrvyjhyjem.supabase.co';   
   const SUPABASE_ANON_KEY = 'sb_publishable_HEWUOT6Gv-zhOqrYDe4Vug_1rUgNDdQ';  
-  const ADMIN_PASSWORD    = 'admin123'; // <-- slobodno promeni lozinku ovde po želji
+  const ADMIN_PASSWORD    = 'admin123';
 
-  // ── Init ───────────────────────────────────────────────────────
+  // ── Init Supabase ──────────────────────────────────────────────
   const { createClient } = supabase;
   const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // Indeks studenta u memoriji (ne čuva se nigde trajno)
   let currentStudentId = null;
 
-  // Ako je uređaj već uspešno glasao, odmah zaključaj ekran na startu
   if (localStorage.getItem('glasanje_status') === 'glasao') {
       prikaziPorukuKraj("Već ste iskoristili pravo glasanja sa ovog uređaja.");
   }
+
+  // ── AUTOMATSKI TEST KONEKCIJE NA STARTU ────────────────────────
+  async function testirajKonekcijuSaBazom() {
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    
+    try {
+      // Šaljemo mini-upit bazi samo da vidimo da li uspešno odgovara
+      const { error } = await db.from('studenti').select('student_id').limit(1);
+      
+      if (error) throw error;
+      
+      // Ako nema greške, konekcija je uspešna
+      dot.className = "status-dot connected";
+      txt.textContent = "Baza je povezana";
+    } catch (err) {
+      console.error("Supabase Connection Error:", err);
+      dot.className = "status-dot disconnected";
+      txt.textContent = "Greška u vezi sa bazom";
+      setAlert('login-alert', 'Sajt trenutno ne može da pristupi bazi podataka. Proverite RLS podešavanja na Supabase platformi.', 'error');
+    }
+  }
+
+  // Pokreni test odmah pri učitavanju stranice
+  window.addEventListener('DOMContentLoaded', testirajKonekcijuSaBazom);
+
 
   // ── Pomoćne funkcije ───────────────────────────────────────────
   function showScreen(id) {
@@ -414,35 +468,39 @@
 
   function setAlert(id, msg, type) {
     const el = document.getElementById(id);
-    el.textContent = msg;
-    el.className = `alert alert-${type} show`;
+    if(el) {
+      el.textContent = msg;
+      el.className = `alert alert-${type} show`;
+    }
   }
 
   function clearAlert(id) {
     const el = document.getElementById(id);
-    el.className = 'alert';
-    el.textContent = '';
+    if(el) {
+      el.className = 'alert';
+      el.textContent = '';
+    }
   }
 
   function setLoading(btnId, loading, text = '') {
     const btn = document.getElementById(btnId);
     btn.disabled = loading;
-    btn.innerHTML = loading
-      ? `<span class="spinner"></span>${text}`
-      : text;
+    btn.innerHTML = loading ? `<span class="spinner"></span>${text}` : text;
   }
 
   function prikaziPorukuKraj(poruka) {
     setTimeout(() => {
         const card = document.querySelector('.card');
-        card.innerHTML = `
-          <div class="center">
-            <div class="success-icon" style="background: var(--warn-bg); color: var(--warn);">⚠️</div>
-            <h1>Pristup onemogućen</h1>
-            <p class="subtitle" style="margin-top:10px">${poruka}</p>
-          </div>
-        `;
-    }, 50);
+        if(card) {
+          card.innerHTML = `
+            <div class="center">
+              <div class="success-icon" style="background: var(--warn-bg); color: var(--warn);">⚠️</div>
+              <h1>Pristup onemogućen</h1>
+              <p class="subtitle" style="margin-top:10px">${poruka}</p>
+            </div>
+          `;
+        }
+    }, 55);
   }
 
   // ── Ekran 1: Login ─────────────────────────────────────────────
@@ -460,17 +518,18 @@
     setLoading('btn-login', true, 'Proveravam podatke…');
 
     try {
+      // Iskorišćena komanda .ilike za oba polja radi bezbednosti od velikih/malih slova
       const { data, error } = await db
         .from('studenti')
         .select('student_id, glasao')
         .ilike('ime_prezime', ime)
-        .eq('student_id', indeks)
+        .ilike('student_id', indeks)
         .maybeSingle();
 
       if (error) throw error;
 
       if (!data) {
-        setAlert('login-alert', 'Niste na spisku ili su podaci pogrešni.', 'error');
+        setAlert('login-alert', 'Niste na spisku ili su podaci pogrešni. Pripazite na tačnost karaktera.', 'error');
         return;
       }
 
@@ -479,13 +538,12 @@
         return;
       }
 
-      // Uspešan login — pamtimo indeks samo u memoriji
-      currentStudentId = indeks;
+      currentStudentId = data.student_id; // uzimamo tačan ID iz baze
       showScreen('screen-vote');
 
     } catch (err) {
       console.error(err);
-      setAlert('login-alert', 'Greška pri povezivanju. Proverite konekciju.', 'error');
+      setAlert('login-alert', 'Sajt nema pristup bazi. Da li je RLS isključen na tabeli?', 'error');
     } finally {
       setLoading('btn-login', false, 'Nastavi na glasanje');
     }
@@ -509,16 +567,12 @@
     setLoading('btn-vote', true, 'Beležim glas…');
 
     try {
-      // Dve ODVOJENE i nezavisne operacije izvršavaju se u isto vreme
       const [markResult, voteResult] = await Promise.all([
-
-        // 1. Označi studenta kao glasao (via student_id)
         db
           .from('studenti')
           .update({ glasao: true })
           .eq('student_id', currentStudentId),
 
-        // 2. Upiši samo izabrani tekst — bez ikakvih metapodataka o studentu
         db
           .from('glasovi')
           .insert({ izbor: selected.value })
@@ -527,17 +581,13 @@
       if (markResult.error) throw markResult.error;
       if (voteResult.error) throw voteResult.error;
 
-      // Zabeležimo u localStorage da je ovaj uređaj glasao
       localStorage.setItem('glasanje_status', 'glasao');
-
-      // Obrišemo indeks iz memorije
       currentStudentId = null;
-
       showScreen('screen-done');
 
     } catch (err) {
       console.error(err);
-      setAlert('vote-alert', 'Greška pri beleženju glasa. Pokušajte ponovo.', 'error');
+      setAlert('vote-alert', 'Greška pri beleženju glasa. Proverite RLS na tabeli "glasovi".', 'error');
     } finally {
       setLoading('btn-vote', false, 'Potvrdi i glasaj');
     }
@@ -546,9 +596,7 @@
   // ── Admin panel ────────────────────────────────────────────────
   function showAdmin(e) {
     e.preventDefault();
-    
     const unesenaLozinka = prompt("Unesite admin lozinku za pristup rezultatima:");
-    
     if (unesenaLozinka === ADMIN_PASSWORD) {
         showScreen('screen-admin');
         loadResults();
@@ -562,21 +610,12 @@
     setLoading('btn-refresh', true, 'Učitavam…');
 
     try {
-      const { data, error } = await db
-        .from('glasovi')
-        .select('izbor');
-
+      const { data, error } = await db.from('glasovi').select('izbor');
       if (error) throw error;
 
-      // Uvek prikazujemo sve tri opcije, čak i ako imaju 0 glasova
       const counts = { "DA": 0, "NE": 0, "UZDRŽAN": 0 };
-      
       (data || []).forEach(row => {
-        if (row.izbor in counts) {
-          counts[row.izbor]++;
-        } else {
-          counts[row.izbor] = 1;
-        }
+        if (row.izbor in counts) counts[row.izbor]++;
       });
 
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -589,7 +628,6 @@
         setAlert('admin-alert', 'Još uvek nema zabeleženih glasova.', 'warn');
       }
 
-      // Sortiraj opcije po broju glasova (opadajuće)
       const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
 
       sorted.forEach(([opcija, broj]) => {
@@ -606,7 +644,6 @@
         container.appendChild(row);
       });
 
-      // Animiraj trake nakon render-a
       requestAnimationFrame(() => {
         document.querySelectorAll('.result-bar').forEach(bar => {
           bar.style.width = bar.dataset.pct + '%';
@@ -622,14 +659,9 @@
   }
 
   function escHtml(str) {
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  // ── Enter taster na login formi ─────────────────────────────────
   ['ime', 'indeks'].forEach(id => {
     document.getElementById(id).addEventListener('keydown', e => {
       if (e.key === 'Enter') handleLogin();
