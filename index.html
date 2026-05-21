@@ -81,6 +81,9 @@
     .history-item-badge{display:inline-block;background:var(--accent-bg);color:var(--accent);font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;margin-left:8px}
     .history-detail{display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
     .history-item.open .history-detail{display:block}
+    .history-delete-btn{background:none;border:none;color:var(--danger);font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;transition:background .2s;font-family:'DM Sans',sans-serif;font-weight:600;opacity:0;transition:opacity .2s}
+    .history-item:hover .history-delete-btn{opacity:1}
+    .history-item-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
     /* Poll builder */
     .poll-options-builder{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
     .poll-option-row{display:flex;gap:8px;align-items:center}
@@ -137,9 +140,9 @@
     <p class="subtitle">Unesite vaše podatke da biste pristupili glasanju. Vaš identitet neće biti vezan za vaš glas.</p>
     <div id="login-alert" class="alert"></div>
     <label for="ime">Ime i prezime</label>
-    <input type="text" id="ime" placeholder="Ime i prezime" autocomplete="name" />
+    <input type="text" id="ime" placeholder="npr. Marko Marković" autocomplete="name" />
     <label for="indeks">Broj indeksa</label>
-    <input type="text" id="indeks" placeholder="Broj indeksa" autocomplete="off" />
+    <input type="text" id="indeks" placeholder="npr. TEST-001" autocomplete="off" />
     <button class="btn" id="btn-login" onclick="handleLogin()">Nastavi na glasanje</button>
     <a href="#admin" class="admin-link" onclick="showAdmin(event)">&#9679; admin</a>
   </div>
@@ -243,8 +246,6 @@
     <!-- TAB: Google Forms embed -->
     <div id="tab-embed" class="tab-panel">
       <div id="embed-alert" class="alert"></div>
-      <label for="forms-title">Naslov formulara (prikazuje se glasačima)</label>
-      <input type="text" id="forms-title" placeholder="npr. Glasanje na sednici" style="margin-bottom:18px" oninput="updateFormsTitle()" />
       <label for="forms-url">Google Forms link</label>
       <input type="url" id="forms-url" placeholder="https://docs.google.com/forms/d/e/.../viewform" />
       <p style="font-size:12px;color:var(--ink-soft);margin-top:-12px;margin-bottom:16px">
@@ -337,18 +338,16 @@
   });
 
   async function ucitajKonfiguraciju() {
-    const [poll, status, formsUrl, formsActive, formsTitle] = await Promise.all([
+    const [poll, status, formsUrl, formsActive] = await Promise.all([
       cfgGet('active_poll'),
       cfgGet('poll_status'),
       cfgGet('forms_url'),
-      cfgGet('forms_active'),
-      cfgGet('forms_title')
+      cfgGet('forms_active')
     ]);
     if (poll) activePoll = poll;
     window._pollStatus   = status || 'active';
     window._formsUrl     = formsUrl || null;
     window._formsActive  = formsActive === true || formsActive === 'true';
-    window._formsTitle   = formsTitle || 'Google Forms';
     const savedMode = await cfgGet('voting_mode');
     window._votingMode   = savedMode || 'public';
   }
@@ -361,7 +360,6 @@
         if (key === 'poll_status') { window._pollStatus = value || 'active'; updatePollToggleUI(); }
         if (key === 'forms_url')  { window._formsUrl = value; }
         if (key === 'forms_active') { window._formsActive = value === true || value === 'true'; renderVoteScreen(); }
-        if (key === 'forms_title') { window._formsTitle = value || 'Google Forms'; renderVoteScreen(); }
         if (key === 'voting_mode') { window._votingMode = value || 'public'; updateModeUI(); }
       })
       .subscribe();
@@ -442,7 +440,7 @@
     if (oldNazad) oldNazad.remove();
 
     if (formsActive && formsUrl) {
-      document.getElementById('vote-title').textContent = window._formsTitle || 'Google Forms';
+      document.getElementById('vote-title').textContent = 'Google Forms';
       document.getElementById('vote-subtitle').textContent = 'Popunite formular ispod.';
       container.innerHTML = '<iframe src="' + formsUrl + '" style="width:100%;height:480px;border:none;border-radius:10px;display:block"></iframe>';
       btnVote.style.display = 'none';
@@ -655,9 +653,27 @@
       }).join('');
       const div = document.createElement('div');
       div.className = 'history-item';
-      div.innerHTML = `<div class="history-item-title" onclick="this.parentElement.classList.toggle('open')">${escHtml(item.title||'Glasanje')} <span class="history-item-badge">${item.total} glasova</span></div><div class="history-item-meta">${date}</div><div class="history-detail"><div class="results-grid" style="margin-bottom:6px">${barsHtml}</div></div>`;
+      const itemId = item.pollId || item.title || '';
+      div.innerHTML = `
+        <div class="history-item-header">
+          <div style="flex:1;min-width:0">
+            <div class="history-item-title" onclick="this.closest('.history-item').classList.toggle('open')">${escHtml(item.title||'Glasanje')} <span class="history-item-badge">${item.total} glasova</span></div>
+            <div class="history-item-meta">${date}</div>
+          </div>
+          <button class="history-delete-btn" onclick="obrisiIzIstorije('${escHtml(itemId)}')" title="Obriši">✕ Obriši</button>
+        </div>
+        <div class="history-detail"><div class="results-grid" style="margin-bottom:6px">${barsHtml}</div></div>`;
       container.appendChild(div);
     });
+  }
+
+  async function obrisiIzIstorije(itemId) {
+    if (!itemId) return;
+    const existing = await cfgGet('poll_history') || [];
+    const updated = existing.filter(h => (h.pollId || h.title || '') !== itemId);
+    if (updated.length === existing.length) return; // nothing removed
+    await cfgSet('poll_history', updated);
+    await renderHistory();
   }
 
   function initPollBuilder() {
@@ -736,10 +752,8 @@
     if (!url.includes('embedded=true')) url += (url.includes('?') ? '&' : '?') + 'embedded=true';
     window._formsUrl = url;
     window._formsActive = true;
-    window._formsTitle = document.getElementById('forms-title').value.trim() || 'Google Forms';
     await cfgSet('forms_url', url);
     await cfgSet('forms_active', true);
-    await cfgSet('forms_title', window._formsTitle);
     document.getElementById('forms-iframe').src = url;
     document.getElementById('forms-placeholder').style.display = 'none';
     document.getElementById('forms-preview').style.display = 'block';
@@ -801,16 +815,8 @@
     clearAlert('embed-alert');
   }
 
-  function updateFormsTitle() {
-    const title = document.getElementById('forms-title').value.trim();
-    window._formsTitle = title || 'Google Forms';
-    renderVoteScreen();
-  }
-
   function restoreEmbed() {
     const saved = window._formsUrl;
-    const titleInput = document.getElementById('forms-title');
-    if (titleInput && window._formsTitle) titleInput.value = window._formsTitle === 'Google Forms' ? '' : window._formsTitle;
     if (!saved) return;
     document.getElementById('forms-url').value = saved.replace('?embedded=true','').replace('&embedded=true','');
     document.getElementById('forms-iframe').src = saved;
