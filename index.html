@@ -125,6 +125,7 @@
     vote:  new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/voted.mp3'),
     back:  new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/voted.mp3'),
     click: new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/voted.mp3'),
+    wrong: new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/wrong.mp3'),
   };
   function playSound(type) {
     const s = SOUNDS[type];
@@ -423,6 +424,7 @@
       const pollId = activePoll.id || 'default';
       const glasaoIds = (data.glasao || '').toString().split(',').map(s => s.trim()).filter(Boolean);
       if (glasaoIds.includes(pollId)) {
+        playSound('wrong');
         setAlert('login-alert', 'Već ste iskoristili svoje pravo glasanja za ovu anketu!', 'warn');
         return;
       }
