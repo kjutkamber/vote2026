@@ -276,8 +276,7 @@
 <script>
   const SUPABASE_URL      = 'https://kmuiyudeepmrvyjhyjem.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttdWl5dWRlZXBtcnZ5amh5amVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODk0ODUsImV4cCI6MjA5NDg2NTQ4NX0.MwNhq9EeQuEJvZp_8URBFq-pJLMyhXa_8YGvXJoS_xQ';
-  const ADMIN_PASSWORD    = 'admin123';
-
+  
   const { createClient } = supabase;
   const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -514,16 +513,18 @@
     }
   }
 
-  function showAdmin(e) {
-    e.preventDefault();
-    const lozinka = prompt('Unesite admin lozinku:');
-    if (lozinka === ADMIN_PASSWORD) {
-      showScreen('screen-admin');
-      loadResults();
-    } else if (lozinka !== null) {
-      alert('Netačna lozinka!');
-    }
+async function showAdmin(e) {
+  e.preventDefault();
+  const lozinka = prompt('Unesite admin lozinku:');
+  if (!lozinka) return;
+  const saved = await cfgGet('admin_password');
+  if (lozinka === saved) {
+    showScreen('screen-admin');
+    loadResults();
+  } else {
+    alert('Netačna lozinka!');
   }
+}  
 
   async function togglePollActive() {
     const nowActive = window._pollStatus === 'inactive';
