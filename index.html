@@ -66,13 +66,11 @@
     .admin-link:hover{color:var(--ink-soft)}
     .screen{display:none}
     .screen.active{display:block}
-    /* Admin Tabs */
     .admin-tabs{display:flex;gap:4px;background:var(--paper);border-radius:12px;padding:4px;margin-bottom:24px;border:1px solid var(--border)}
     .tab-btn{flex:1;padding:9px 6px;border:none;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--ink-soft);transition:all .2s;letter-spacing:.02em}
     .tab-btn.active{background:var(--card);color:var(--accent);box-shadow:0 1px 6px rgba(0,0,0,.08)}
     .tab-panel{display:none}
     .tab-panel.active{display:block;animation:rise .3s ease both}
-    /* Istorija */
     .history-list{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
     .history-item{background:var(--paper);border:1px solid var(--border);border-radius:10px;padding:14px 16px;transition:border-color .2s,background .2s}
     .history-item.open{border-color:var(--accent);background:var(--accent-bg)}
@@ -84,7 +82,6 @@
     .history-delete-btn{background:none;border:none;color:var(--danger);font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;transition:background .2s;font-family:'DM Sans',sans-serif;font-weight:600;opacity:0;transition:opacity .2s}
     .history-item:hover .history-delete-btn{opacity:1}
     .history-item-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-    /* Poll builder */
     .poll-options-builder{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
     .poll-option-row{display:flex;gap:8px;align-items:center}
     .poll-option-row input{margin-bottom:0}
@@ -92,22 +89,18 @@
     .remove-opt-btn:hover{background:var(--danger-bg)}
     .add-opt-btn{background:var(--paper);border:1.5px dashed var(--border);border-radius:10px;padding:10px;font-size:13px;color:var(--ink-soft);cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif;font-weight:500;width:100%;margin-bottom:16px}
     .add-opt-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
-    /* Google Forms */
     .forms-preview{width:100%;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px;display:none}
     .forms-preview iframe{width:100%;height:480px;border:none;display:block}
     .forms-placeholder{background:var(--paper);border:1.5px dashed var(--border);border-radius:10px;padding:36px 20px;text-align:center;margin-bottom:16px;color:var(--ink-soft);font-size:14px}
     .forms-placeholder .forms-icon{font-size:36px;margin-bottom:10px}
-    /* Button row */
     .btn-row{display:flex;gap:10px;margin-top:10px}
     .btn-row .btn{flex:1}
-    /* Print */
     @media print{
       body{background:white;background-image:none;padding:0;display:block}
       .connection-status,.admin-tabs,.btn,.btn-sm,.admin-link,.screen:not(.active){display:none!important}
       .card{box-shadow:none;border:none;max-width:100%;padding:20px}
       .print-only{display:block!important}
     }
-    /* Confirm Modal */
     .modal-overlay{position:fixed;inset:0;background:rgba(15,17,23,.45);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;padding:24px;opacity:0;pointer-events:none;transition:opacity .25s ease}
     .modal-overlay.show{opacity:1;pointer-events:all}
     .modal-box{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);width:100%;max-width:380px;padding:32px 28px;transform:translateY(16px) scale(.97);transition:transform .25s cubic-bezier(.22,.68,0,1.2)}
@@ -125,6 +118,22 @@
   </style>
 </head>
 <body>
+
+<!-- ===== ZVUCNI EFEKTI ===== -->
+<script>
+  const SOUNDS = {
+    vote:  new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/voted.mp3'),
+    back:  new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/voted.mp3'),
+    click: new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/voted.mp3'),
+  };
+  function playSound(type) {
+    const s = SOUNDS[type];
+    if (!s) return;
+    s.currentTime = 0;
+    s.play().catch(() => {});
+  }
+</script>
+<!-- ========================= -->
 
 <div class="connection-status">
   <div id="status-dot" class="status-dot checking"></div>
@@ -282,7 +291,6 @@
 
   let currentStudentId = null;
 
-  // --- Config helpers (Supabase app_config table) ---
   async function cfgGet(key) {
     try {
       const { data } = await db.from('app_config').select('value').eq('key', key).maybeSingle();
@@ -434,7 +442,6 @@
     const container = document.getElementById('options-container');
     const btnVote = document.getElementById('btn-vote');
 
-    // Remove any previously added "Nazad" button to avoid duplicates
     const oldNazad = document.getElementById('btn-nazad-forms');
     if (oldNazad) oldNazad.remove();
 
@@ -443,7 +450,6 @@
       document.getElementById('vote-subtitle').textContent = 'Popunite formular ispod.';
       container.innerHTML = '<iframe src="' + formsUrl + '" style="width:100%;height:480px;border:none;border-radius:10px;display:block"></iframe>';
       btnVote.style.display = 'none';
-      // Add "Nazad na početnu" button below iframe
       const nazad = document.createElement('button');
       nazad.id = 'btn-nazad-forms';
       nazad.className = 'btn btn-outline';
@@ -454,7 +460,6 @@
       return;
     }
 
-    // Standard poll
     btnVote.style.display = '';
     document.getElementById('vote-title').textContent = activePoll.title || 'Glasajte';
     document.getElementById('vote-subtitle').textContent = activePoll.desc || '';
@@ -477,30 +482,28 @@
       const naLokaciji = window._votingMode === 'location';
       const pollId = activePoll.id || 'default';
 
-      // 1. Fetch current glasao string
       const { data: studentData, error: fetchErr } = await db.from('studenti').select('glasao').eq('student_id', currentStudentId).maybeSingle();
       if (fetchErr) { console.error('Fetch glasao error:', fetchErr); throw fetchErr; }
 
-      // 2. Build new glasao string with current poll_id appended
       const raw = (studentData?.glasao || '').toString().trim();
       const existingIds = (raw === 'false' || raw === 'true' || raw === '') ? [] : raw.split(',').map(s => s.trim()).filter(Boolean);
       if (!existingIds.includes(pollId)) existingIds.push(pollId);
       const newGlasao = existingIds.join(', ');
 
-      // 3. Update glasao on student record
       const { error: markErr } = await db.from('studenti').update({ glasao: newGlasao }).eq('student_id', currentStudentId);
       if (markErr) { console.error('Update glasao error:', markErr); throw new Error('Nije moguće ažurirati status glasanja. Proverite RLS UPDATE policy na tabeli studenti.'); }
 
-      // 4. Insert anonymous vote
       const { error: voteErr } = await db.from('glasovi').insert({ izbor: selected.value, poll_id: pollId });
       if (voteErr) { console.error('Insert glas error:', voteErr); throw voteErr; }
       currentStudentId = null;
       if (naLokaciji) {
+        playSound('vote'); // 🔊 zvuk posle glasanja (na lokaciji mod)
         document.getElementById('ime').value = '';
         document.getElementById('indeks').value = '';
         showScreen('screen-login');
         setAlert('login-alert', '✅ Glas je zabeležen! Sledeći glasač može pristupiti.', 'success');
       } else {
+        playSound('vote'); // 🔊 zvuk posle glasanja (javni mod)
         localStorage.setItem('glasanje_status_' + (activePoll.id || 'default'), 'glasao');
         showScreen('screen-done');
       }
@@ -513,18 +516,18 @@
     }
   }
 
-async function showAdmin(e) {
-  e.preventDefault();
-  const lozinka = prompt('Unesite admin lozinku:');
-  if (!lozinka) return;
-  const saved = await cfgGet('admin_password');
-  if (lozinka === saved) {
-    showScreen('screen-admin');
-    loadResults();
-  } else {
-    alert('Netačna lozinka!');
+  async function showAdmin(e) {
+    e.preventDefault();
+    const lozinka = prompt('Unesite admin lozinku:');
+    if (!lozinka) return;
+    const saved = await cfgGet('admin_password');
+    if (lozinka === saved) {
+      showScreen('screen-admin');
+      loadResults();
+    } else {
+      alert('Netačna lozinka!');
+    }
   }
-}  
 
   async function togglePollActive() {
     const nowActive = window._pollStatus === 'inactive';
@@ -672,7 +675,7 @@ async function showAdmin(e) {
     if (!itemId) return;
     const existing = await cfgGet('poll_history') || [];
     const updated = existing.filter(h => (h.pollId || h.title || '') !== itemId);
-    if (updated.length === existing.length) return; // nothing removed
+    if (updated.length === existing.length) return;
     await cfgSet('poll_history', updated);
     await renderHistory();
   }
@@ -739,7 +742,6 @@ async function showAdmin(e) {
     setAlert('create-alert', 'Anketa je uklonjena.', 'warn');
   }
 
-
   async function activateEmbed() {
     clearAlert('embed-alert');
     let url = document.getElementById('forms-url').value.trim();
@@ -764,6 +766,7 @@ async function showAdmin(e) {
     if (status) { status.textContent = '✅ Google formular je aktiviran — glasači će videti ovaj formular umesto standardnog glasanja.'; status.style.display = 'block'; status.style.color = 'var(--success)'; }
     setAlert('embed-alert', '✅ Formular aktiviran! Glasači sada vide Google Forms.', 'success');
   }
+
   async function loadEmbed() {
     clearAlert('embed-alert');
     let url = document.getElementById('forms-url').value.trim();
@@ -788,7 +791,6 @@ async function showAdmin(e) {
     if (visible) {
       preview.style.display = 'none';
       placeholder.style.display = '';
-
       if (btn) btn.textContent = '👁 Prikaži';
     } else {
       const saved = window._formsUrl;
@@ -797,7 +799,6 @@ async function showAdmin(e) {
       document.getElementById('forms-url').value = saved.replace('?embedded=true','').replace('&embedded=true','');
       preview.style.display = 'block';
       placeholder.style.display = 'none';
-
       if (btn) btn.textContent = '👁 Sakrij';
     }
   }
@@ -834,6 +835,7 @@ async function showAdmin(e) {
     document.getElementById('modal-overlay').classList.remove('show');
   }
   async function potvrdiNazad() {
+    playSound('back'); // 🔊 zvuk pri povratku na početni ekran
     zatvoriModal();
     if (currentStudentId) {
       try {
