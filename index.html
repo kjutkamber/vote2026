@@ -104,6 +104,16 @@
       .card{box-shadow:none;border:none;max-width:100%;padding:20px}
       .print-only{display:block!important}
     }
+    /* Confirm Modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(15,17,23,.45);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;padding:24px;opacity:0;pointer-events:none;transition:opacity .25s ease}
+    .modal-overlay.show{opacity:1;pointer-events:all}
+    .modal-box{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);width:100%;max-width:380px;padding:32px 28px;transform:translateY(16px) scale(.97);transition:transform .25s cubic-bezier(.22,.68,0,1.2)}
+    .modal-overlay.show .modal-box{transform:translateY(0) scale(1)}
+    .modal-icon{width:52px;height:52px;border-radius:50%;background:var(--warn-bg);display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 16px}
+    .modal-title{font-family:'DM Serif Display',serif;font-size:20px;text-align:center;margin-bottom:8px}
+    .modal-desc{font-size:14px;color:var(--ink-soft);text-align:center;line-height:1.5;margin-bottom:24px}
+    .modal-btns{display:flex;gap:10px}
+    .modal-btns .btn{flex:1}
     .print-only{display:none}
     .signature-line{margin-top:40px;padding-top:16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft)}
     .signature-block{text-align:center;min-width:160px}
@@ -127,9 +137,9 @@
     <p class="subtitle">Unesite vaše podatke da biste pristupili glasanju. Vaš identitet neće biti vezan za vaš glas.</p>
     <div id="login-alert" class="alert"></div>
     <label for="ime">Ime i prezime</label>
-    <input type="text" id="ime" placeholder="npr. Marko Marković" autocomplete="name" />
+    <input type="text" id="ime" placeholder="Ime i prezime" autocomplete="name" />
     <label for="indeks">Broj indeksa</label>
-    <input type="text" id="indeks" placeholder="npr. TEST-001" autocomplete="off" />
+    <input type="text" id="indeks" placeholder="Broj indeksa" autocomplete="off" />
     <button class="btn" id="btn-login" onclick="handleLogin()">Nastavi na glasanje</button>
     <a href="#admin" class="admin-link" onclick="showAdmin(event)">&#9679; admin</a>
   </div>
@@ -233,6 +243,8 @@
     <!-- TAB: Google Forms embed -->
     <div id="tab-embed" class="tab-panel">
       <div id="embed-alert" class="alert"></div>
+      <label for="forms-title">Naslov formulara (prikazuje se glasačima)</label>
+      <input type="text" id="forms-title" placeholder="npr. Glasanje na sednici" style="margin-bottom:18px" oninput="updateFormsTitle()" />
       <label for="forms-url">Google Forms link</label>
       <input type="url" id="forms-url" placeholder="https://docs.google.com/forms/d/e/.../viewform" />
       <p style="font-size:12px;color:var(--ink-soft);margin-top:-12px;margin-bottom:16px">
@@ -325,16 +337,18 @@
   });
 
   async function ucitajKonfiguraciju() {
-    const [poll, status, formsUrl, formsActive] = await Promise.all([
+    const [poll, status, formsUrl, formsActive, formsTitle] = await Promise.all([
       cfgGet('active_poll'),
       cfgGet('poll_status'),
       cfgGet('forms_url'),
-      cfgGet('forms_active')
+      cfgGet('forms_active'),
+      cfgGet('forms_title')
     ]);
     if (poll) activePoll = poll;
     window._pollStatus   = status || 'active';
     window._formsUrl     = formsUrl || null;
     window._formsActive  = formsActive === true || formsActive === 'true';
+    window._formsTitle   = formsTitle || 'Google Forms';
     const savedMode = await cfgGet('voting_mode');
     window._votingMode   = savedMode || 'public';
   }
@@ -347,6 +361,7 @@
         if (key === 'poll_status') { window._pollStatus = value || 'active'; updatePollToggleUI(); }
         if (key === 'forms_url')  { window._formsUrl = value; }
         if (key === 'forms_active') { window._formsActive = value === true || value === 'true'; renderVoteScreen(); }
+        if (key === 'forms_title') { window._formsTitle = value || 'Google Forms'; renderVoteScreen(); }
         if (key === 'voting_mode') { window._votingMode = value || 'public'; updateModeUI(); }
       })
       .subscribe();
@@ -427,7 +442,7 @@
     if (oldNazad) oldNazad.remove();
 
     if (formsActive && formsUrl) {
-      document.getElementById('vote-title').textContent = 'Google Forms';
+      document.getElementById('vote-title').textContent = window._formsTitle || 'Google Forms';
       document.getElementById('vote-subtitle').textContent = 'Popunite formular ispod.';
       container.innerHTML = '<iframe src="' + formsUrl + '" style="width:100%;height:480px;border:none;border-radius:10px;display:block"></iframe>';
       btnVote.style.display = 'none';
@@ -437,12 +452,7 @@
       nazad.className = 'btn btn-outline';
       nazad.style.marginTop = '12px';
       nazad.textContent = '← Nazad na početnu';
-      nazad.onclick = () => {
-        currentStudentId = null;
-        document.getElementById('ime').value = '';
-        document.getElementById('indeks').value = '';
-        showScreen('screen-login');
-      };
+      nazad.onclick = () => otvoriModal();
       btnVote.parentNode.insertBefore(nazad, btnVote.nextSibling);
       return;
     }
@@ -468,16 +478,25 @@
     setLoading('btn-vote', true, 'Beležim glas…');
     try {
       const naLokaciji = window._votingMode === 'location';
-      // Fetch existing glasao string and append current poll_id
-      const { data: studentData } = await db.from('studenti').select('glasao').eq('student_id', currentStudentId).maybeSingle();
-      const existingIds = (studentData?.glasao || '').toString().split(',').map(s => s.trim()).filter(Boolean);
       const pollId = activePoll.id || 'default';
+
+      // 1. Fetch current glasao string
+      const { data: studentData, error: fetchErr } = await db.from('studenti').select('glasao').eq('student_id', currentStudentId).maybeSingle();
+      if (fetchErr) { console.error('Fetch glasao error:', fetchErr); throw fetchErr; }
+
+      // 2. Build new glasao string with current poll_id appended
+      const raw = (studentData?.glasao || '').toString().trim();
+      const existingIds = (raw === 'false' || raw === 'true' || raw === '') ? [] : raw.split(',').map(s => s.trim()).filter(Boolean);
       if (!existingIds.includes(pollId)) existingIds.push(pollId);
       const newGlasao = existingIds.join(', ');
-      const markResult = await db.from('studenti').update({ glasao: newGlasao }).eq('student_id', currentStudentId);
-      if (markResult.error) throw markResult.error;
-      const voteResult = await db.from('glasovi').insert({ izbor: selected.value, poll_id: activePoll.id || 'default' });
-      if (voteResult.error) throw voteResult.error;
+
+      // 3. Update glasao on student record
+      const { error: markErr } = await db.from('studenti').update({ glasao: newGlasao }).eq('student_id', currentStudentId);
+      if (markErr) { console.error('Update glasao error:', markErr); throw new Error('Nije moguće ažurirati status glasanja. Proverite RLS UPDATE policy na tabeli studenti.'); }
+
+      // 4. Insert anonymous vote
+      const { error: voteErr } = await db.from('glasovi').insert({ izbor: selected.value, poll_id: pollId });
+      if (voteErr) { console.error('Insert glas error:', voteErr); throw voteErr; }
       currentStudentId = null;
       if (naLokaciji) {
         document.getElementById('ime').value = '';
@@ -491,7 +510,7 @@
     } catch (err) {
       console.error(err);
       currentStudentId = null;
-      setAlert('vote-alert', 'Greška pri beleženju glasa. Proverite RLS na tabeli "glasovi".', 'error');
+      setAlert('vote-alert', err.message || 'Greška pri beleženju glasa. Proverite RLS podešavanja.', 'error');
     } finally {
       setLoading('btn-vote', false, 'Potvrdi i glasaj');
     }
@@ -717,8 +736,10 @@
     if (!url.includes('embedded=true')) url += (url.includes('?') ? '&' : '?') + 'embedded=true';
     window._formsUrl = url;
     window._formsActive = true;
+    window._formsTitle = document.getElementById('forms-title').value.trim() || 'Google Forms';
     await cfgSet('forms_url', url);
     await cfgSet('forms_active', true);
+    await cfgSet('forms_title', window._formsTitle);
     document.getElementById('forms-iframe').src = url;
     document.getElementById('forms-placeholder').style.display = 'none';
     document.getElementById('forms-preview').style.display = 'block';
@@ -780,8 +801,16 @@
     clearAlert('embed-alert');
   }
 
+  function updateFormsTitle() {
+    const title = document.getElementById('forms-title').value.trim();
+    window._formsTitle = title || 'Google Forms';
+    renderVoteScreen();
+  }
+
   function restoreEmbed() {
     const saved = window._formsUrl;
+    const titleInput = document.getElementById('forms-title');
+    if (titleInput && window._formsTitle) titleInput.value = window._formsTitle === 'Google Forms' ? '' : window._formsTitle;
     if (!saved) return;
     document.getElementById('forms-url').value = saved.replace('?embedded=true','').replace('&embedded=true','');
     document.getElementById('forms-iframe').src = saved;
@@ -791,10 +820,54 @@
     if (btn) btn.textContent = '👁 Sakrij';
   }
 
+  function otvoriModal() {
+    document.getElementById('modal-overlay').classList.add('show');
+  }
+  function zatvoriModal() {
+    document.getElementById('modal-overlay').classList.remove('show');
+  }
+  async function potvrdiNazad() {
+    zatvoriModal();
+    if (currentStudentId) {
+      try {
+        const pollId = activePoll.id || 'default';
+        const { data: studentData } = await db.from('studenti').select('glasao').eq('student_id', currentStudentId).maybeSingle();
+        const raw = (studentData?.glasao || '').toString().trim();
+        const existingIds = (raw === 'false' || raw === 'true' || raw === '') ? [] : raw.split(',').map(s => s.trim()).filter(Boolean);
+        if (!existingIds.includes(pollId)) {
+          existingIds.push(pollId);
+          await db.from('studenti').update({ glasao: existingIds.join(', ') }).eq('student_id', currentStudentId);
+        }
+        await db.from('glasovi').insert({ izbor: 'GOOGLE_FORMS', poll_id: pollId });
+      } catch(err) {
+        console.error('Greška pri beleženju Forms glasanja:', err);
+      }
+    }
+    currentStudentId = null;
+    document.getElementById('ime').value = '';
+    document.getElementById('indeks').value = '';
+    showScreen('screen-login');
+    setAlert('login-alert', '✅ Glas je zabeležen! Sledeći glasač može pristupiti.', 'success');
+  }
+
   ['ime','indeks'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
   });
 </script>
+
+  <!-- Confirm Modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-icon">⚠️</div>
+      <div class="modal-title">Potvrdite glasanje</div>
+      <div class="modal-desc">Da li ste sigurni da ste popunili formular? Ova radnja će zabeležiti vaš glas i ne može se poništiti.</div>
+      <div class="modal-btns">
+        <button class="btn btn-outline" onclick="zatvoriModal()">Nazad</button>
+        <button class="btn" onclick="potvrdiNazad()">✓ Potvrdi</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
