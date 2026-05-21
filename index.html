@@ -140,9 +140,9 @@
     <p class="subtitle">Unesite vaše podatke da biste pristupili glasanju. Vaš identitet neće biti vezan za vaš glas.</p>
     <div id="login-alert" class="alert"></div>
     <label for="ime">Ime i prezime</label>
-    <input type="text" id="ime" placeholder="npr. Marko Marković" autocomplete="name" />
+    <input type="text" id="ime" placeholder="bez š,č,ć,đ,ž" autocomplete="name" />
     <label for="indeks">Broj indeksa</label>
-    <input type="text" id="indeks" placeholder="npr. TEST-001" autocomplete="off" />
+    <input type="text" id="indeks" placeholder="  /  " autocomplete="off" />
     <button class="btn" id="btn-login" onclick="handleLogin()">Nastavi na glasanje</button>
     <a href="#admin" class="admin-link" onclick="showAdmin(event)">&#9679; admin</a>
   </div>
