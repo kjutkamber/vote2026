@@ -6,7 +6,15 @@
   <title>Studentsko Glasanje</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Firebase SDKs (ESM via CDN) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app":       "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"
+    }
+  }
+  </script>
   <style>
     :root{--ink:#0f1117;--ink-soft:#454a57;--paper:#e8e4dc;--card:#ffffff;--border:#e2ddd5;--accent:#1a472a;--accent-lit:#2d6a4f;--accent-bg:#eaf3ee;--danger:#c0392b;--danger-bg:#fdf0ee;--warn:#7d5a00;--warn-bg:#fdf6e3;--success:#1a472a;--success-bg:#eaf3ee;--radius:16px;--shadow:0 4px 32px rgba(15,17,23,.08),0 1px 4px rgba(15,17,23,.05)}
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -122,10 +130,10 @@
 <!-- ===== ZVUCNI EFEKTI ===== -->
 <script>
   const SOUNDS = {
-    vote:  new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/voted.mp3'),
-    back:  new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/voted.mp3'),
-    click: new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/voted.mp3'),
-    wrong: new Audio('https://nhffxmmmwoonnkhvrqev.supabase.co/storage/v1/object/public/sounds/wrong.mp3'),
+    vote:  new Audio('sounds/voted.mp3'),
+    back:  new Audio('sounds/voted.mp3'),
+    click: new Audio('sounds/voted.mp3'),
+    wrong: new Audio('sounds/wrong.mp3'),
   };
   function playSound(type) {
     const s = SOUNDS[type];
@@ -283,24 +291,51 @@
 
 </div>
 
-<script>
-  const SUPABASE_URL      = 'https://kmuiyudeepmrvyjhyjem.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttdWl5dWRlZXBtcnZ5amh5amVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODk0ODUsImV4cCI6MjA5NDg2NTQ4NX0.MwNhq9EeQuEJvZp_8URBFq-pJLMyhXa_8YGvXJoS_xQ';
-  
-  const { createClient } = supabase;
-  const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+<script type="module">
+  import { initializeApp }      from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import {
+    getFirestore, doc, getDoc, getDocs, setDoc, addDoc, updateDoc,
+    collection, query, where, onSnapshot, serverTimestamp, arrayUnion
+  } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-  let currentStudentId = null;
+  // ── 🔧 PASTE YOUR FIREBASE CONFIG HERE ──────────────────────────
+  // Firebase Console → Project Settings → Your apps → SDK setup
+  const firebaseConfig = {
+    apiKey:            "AIzaSyD92LDBIrMKDyD0ORNhYp8dZp50WevhNNc",
+    authDomain:        "svote2026.firebaseapp.com",
+    projectId:         "svote2026",
+    storageBucket:     "svote2026.firebasestorage.app",
+    messagingSenderId: "843284982579",
+    appId:             "1:843284982579:web:d98a0d1f01ae4ebf18ac46",
+  };
+  // ────────────────────────────────────────────────────────────────
 
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // ── cfgGet / cfgSet — replaces supabase app_config helpers ──────
   async function cfgGet(key) {
     try {
-      const { data } = await db.from('app_config').select('value').eq('key', key).maybeSingle();
-      return data ? data.value : null;
+      const snap = await getDoc(doc(db, 'app_config', key));
+      return snap.exists() ? snap.data().value : null;
     } catch { return null; }
   }
   async function cfgSet(key, value) {
-    await db.from('app_config').upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    await setDoc(doc(db, 'app_config', key), { value, updated_at: serverTimestamp() }, { merge: true });
   }
+
+  // ── Make helpers available to non-module inline handlers ─────────
+  window._cfgGet = cfgGet;
+  window._cfgSet = cfgSet;
+  window._db     = db;
+  window._firestoreFns = { doc, getDoc, getDocs, setDoc, addDoc, updateDoc, collection, query, where, onSnapshot, serverTimestamp, arrayUnion };
+</script>
+
+<script>
+  let currentStudentId = null;
+
+  async function cfgGet(key) { return window._cfgGet ? window._cfgGet(key) : null; }
+  async function cfgSet(key, value) { if (window._cfgSet) await window._cfgSet(key, value); }
 
   const DEFAULT_POLL = {
     id: 'default',
@@ -320,15 +355,18 @@
     const dot = document.getElementById('status-dot');
     const txt = document.getElementById('status-text');
     try {
-      const { error } = await db.from('studenti').select('student_id').limit(1);
-      if (error) throw error;
+      // Wait for Firebase to be ready
+      const deadline = Date.now() + 5000;
+      while (!window._db && Date.now() < deadline) await new Promise(r => setTimeout(r, 100));
+      if (!window._db) throw new Error('Firebase nije spreman');
+      await window._cfgGet('poll_status'); // lightweight ping
       dot.className = "status-dot connected";
       txt.textContent = "Baza je povezana";
     } catch (err) {
       console.error(err);
       dot.className = "status-dot disconnected";
       txt.textContent = "Greška u vezi sa bazom";
-      setAlert('login-alert', 'Sajt trenutno ne može da pristupi bazi. Proverite RLS podešavanja na Supabase.', 'error');
+      setAlert('login-alert', 'Sajt trenutno ne može da pristupi bazi. Proverite Firebase konfiguraciju.', 'error');
     }
   }
 
@@ -361,16 +399,24 @@
   }
 
   function pretplatiSeNaPromene() {
-    db.channel('app_config_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_config' }, async (payload) => {
-        const { key, value } = payload.new || {};
-        if (key === 'active_poll' && value) { activePoll = value; renderVoteScreen(); initPollBuilder(); }
-        if (key === 'poll_status') { window._pollStatus = value || 'active'; updatePollToggleUI(); }
-        if (key === 'forms_url')  { window._formsUrl = value; }
-        if (key === 'forms_active') { window._formsActive = value === true || value === 'true'; renderVoteScreen(); }
-        if (key === 'voting_mode') { window._votingMode = value || 'public'; updateModeUI(); }
-      })
-      .subscribe();
+    const keys = ['active_poll','poll_status','forms_url','forms_active','voting_mode'];
+    keys.forEach(key => {
+      // Wait for db to be ready then subscribe
+      const trySubscribe = () => {
+        if (!window._db) { setTimeout(trySubscribe, 200); return; }
+        const { doc, onSnapshot } = window._firestoreFns;
+        onSnapshot(doc(window._db, 'app_config', key), (snap) => {
+          if (!snap.exists()) return;
+          const value = snap.data().value;
+          if (key === 'active_poll' && value) { activePoll = value; renderVoteScreen(); initPollBuilder(); }
+          if (key === 'poll_status')  { window._pollStatus  = value || 'active'; updatePollToggleUI(); }
+          if (key === 'forms_url')    { window._formsUrl    = value; }
+          if (key === 'forms_active') { window._formsActive = value === true || value === 'true'; renderVoteScreen(); }
+          if (key === 'voting_mode')  { window._votingMode  = value || 'public'; updateModeUI(); }
+        });
+      };
+      trySubscribe();
+    });
   }
 
   function showScreen(id) {
@@ -418,11 +464,29 @@
     setLoading('btn-login', true, 'Proveravam podatke…');
     try {
       if (window._pollStatus === 'inactive') { setAlert('login-alert', 'Glasanje je završeno. Nije moguće glasati.', 'warn'); return; }
-      const { data, error } = await db.from('studenti').select('student_id,glasao').ilike('ime_prezime', ime).ilike('student_id', indeks).maybeSingle();
-      if (error) throw error;
-      if (!data) { setAlert('login-alert', 'Niste na spisku ili su podaci pogrešni. Pripazite na tačnost karaktera.', 'error'); return; }
-      const pollId = activePoll.id || 'default';
-      const glasaoIds = (data.glasao || '').toString().split(',').map(s => s.trim()).filter(Boolean);
+
+      // Firestore: look up student by student_id (used as doc ID: "170_23")
+      const docId = indeks.replace('/', '_');
+      const snap  = await window._cfgGet ? null : null; // ensure module loaded
+      const { getDoc, doc } = window._firestoreFns;
+      const studentSnap = await getDoc(doc(window._db, 'studenti', docId));
+
+      if (!studentSnap.exists()) {
+        playSound('wrong');
+        setAlert('login-alert', 'Niste na spisku ili su podaci pogrešni.', 'error');
+        return;
+      }
+
+      const data = studentSnap.data();
+      // Also verify name matches (case-insensitive)
+      if (data.ime_prezime.toLowerCase() !== ime.toLowerCase()) {
+        playSound('wrong');
+        setAlert('login-alert', 'Niste na spisku ili su podaci pogrešni. Pripazite na tačnost karaktera.', 'error');
+        return;
+      }
+
+      const pollId    = activePoll.id || 'default';
+      const glasaoIds = Array.isArray(data.glasao) ? data.glasao : (data.glasao||'').toString().split(',').map(s=>s.trim()).filter(Boolean);
       if (glasaoIds.includes(pollId)) {
         playSound('wrong');
         setAlert('login-alert', 'Već ste iskoristili svoje pravo glasanja za ovu anketu!', 'warn');
@@ -432,7 +496,7 @@
       showScreen('screen-vote');
     } catch (err) {
       console.error(err);
-      setAlert('login-alert', 'Sajt nema pristup bazi. Da li je RLS isključen na tabeli?', 'error');
+      setAlert('login-alert', 'Sajt nema pristup bazi. Proverite Firebase konfiguraciju.', 'error');
     } finally {
       setLoading('btn-login', false, 'Nastavi na glasanje');
     }
@@ -482,37 +546,42 @@
     setLoading('btn-vote', true, 'Beležim glas…');
     try {
       const naLokaciji = window._votingMode === 'location';
-      const pollId = activePoll.id || 'default';
+      const pollId     = activePoll.id || 'default';
+      const { doc, getDoc, updateDoc, addDoc, collection, arrayUnion } = window._firestoreFns;
+      const docId = currentStudentId.replace('/', '_');
 
-      const { data: studentData, error: fetchErr } = await db.from('studenti').select('glasao').eq('student_id', currentStudentId).maybeSingle();
-      if (fetchErr) { console.error('Fetch glasao error:', fetchErr); throw fetchErr; }
+      // Re-check student hasn't voted in the meantime
+      const studentSnap = await getDoc(doc(window._db, 'studenti', docId));
+      const data = studentSnap.data();
+      const glasaoIds = Array.isArray(data.glasao) ? data.glasao : (data.glasao||'').toString().split(',').map(s=>s.trim()).filter(Boolean);
+      if (glasaoIds.includes(pollId)) {
+        setAlert('vote-alert', 'Već ste glasali u ovoj anketi.', 'warn');
+        currentStudentId = null;
+        return;
+      }
 
-      const raw = (studentData?.glasao || '').toString().trim();
-      const existingIds = (raw === 'false' || raw === 'true' || raw === '') ? [] : raw.split(',').map(s => s.trim()).filter(Boolean);
-      if (!existingIds.includes(pollId)) existingIds.push(pollId);
-      const newGlasao = existingIds.join(', ');
+      // Mark student as voted
+      await updateDoc(doc(window._db, 'studenti', docId), { glasao: arrayUnion(pollId) });
 
-      const { error: markErr } = await db.from('studenti').update({ glasao: newGlasao }).eq('student_id', currentStudentId);
-      if (markErr) { console.error('Update glasao error:', markErr); throw new Error('Nije moguće ažurirati status glasanja. Proverite RLS UPDATE policy na tabeli studenti.'); }
+      // Record the vote
+      await addDoc(collection(window._db, 'glasovi'), { izbor: selected.value, poll_id: pollId });
 
-      const { error: voteErr } = await db.from('glasovi').insert({ izbor: selected.value, poll_id: pollId });
-      if (voteErr) { console.error('Insert glas error:', voteErr); throw voteErr; }
       currentStudentId = null;
       if (naLokaciji) {
-        playSound('vote'); // 🔊 zvuk posle glasanja (na lokaciji mod)
+        playSound('vote');
         document.getElementById('ime').value = '';
         document.getElementById('indeks').value = '';
         showScreen('screen-login');
         setAlert('login-alert', '✅ Glas je zabeležen! Sledeći glasač može pristupiti.', 'success');
       } else {
-        playSound('vote'); // 🔊 zvuk posle glasanja (javni mod)
+        playSound('vote');
         localStorage.setItem('glasanje_status_' + (activePoll.id || 'default'), 'glasao');
         showScreen('screen-done');
       }
     } catch (err) {
       console.error(err);
       currentStudentId = null;
-      setAlert('vote-alert', err.message || 'Greška pri beleženju glasa. Proverite RLS podešavanja.', 'error');
+      setAlert('vote-alert', err.message || 'Greška pri beleženju glasa. Proverite Firebase konfiguraciju.', 'error');
     } finally {
       setLoading('btn-vote', false, 'Potvrdi i glasaj');
     }
@@ -586,12 +655,14 @@
         setLoading('btn-refresh', false, '↻ Osveži');
         return;
       }
-      const { data, error } = await db.from('glasovi').select('izbor').eq('poll_id', activePoll.id || 'default');
-      if (error) throw error;
+      const { collection, query, where, getDocs } = window._firestoreFns;
+      const q    = query(collection(window._db, 'glasovi'), where('poll_id', '==', activePoll.id || 'default'));
+      const snap = await getDocs(q);
       const counts = {};
       (activePoll.options || []).forEach(o => counts[o.value] = 0);
       const JUNK_RE = /^\$\{.*\}$/;
-      (data || []).forEach(row => {
+      snap.forEach(d => {
+        const row = d.data();
         if (!row.izbor || JUNK_RE.test(row.izbor)) return;
         if (row.izbor in counts) counts[row.izbor]++;
         else counts[row.izbor] = (counts[row.izbor] || 0) + 1;
@@ -837,19 +908,19 @@
     document.getElementById('modal-overlay').classList.remove('show');
   }
   async function potvrdiNazad() {
-    playSound('back'); // 🔊 zvuk pri povratku na početni ekran
+    playSound('back');
     zatvoriModal();
     if (currentStudentId) {
       try {
         const pollId = activePoll.id || 'default';
-        const { data: studentData } = await db.from('studenti').select('glasao').eq('student_id', currentStudentId).maybeSingle();
-        const raw = (studentData?.glasao || '').toString().trim();
-        const existingIds = (raw === 'false' || raw === 'true' || raw === '') ? [] : raw.split(',').map(s => s.trim()).filter(Boolean);
-        if (!existingIds.includes(pollId)) {
-          existingIds.push(pollId);
-          await db.from('studenti').update({ glasao: existingIds.join(', ') }).eq('student_id', currentStudentId);
+        const { doc, getDoc, updateDoc, addDoc, collection, arrayUnion } = window._firestoreFns;
+        const docId      = currentStudentId.replace('/', '_');
+        const studentSnap = await getDoc(doc(window._db, 'studenti', docId));
+        const glasaoIds   = studentSnap.exists() ? (studentSnap.data().glasao || []) : [];
+        if (!glasaoIds.includes(pollId)) {
+          await updateDoc(doc(window._db, 'studenti', docId), { glasao: arrayUnion(pollId) });
         }
-        await db.from('glasovi').insert({ izbor: 'GOOGLE_FORMS', poll_id: pollId });
+        await addDoc(collection(window._db, 'glasovi'), { izbor: 'GOOGLE_FORMS', poll_id: pollId });
       } catch(err) {
         console.error('Greška pri beleženju Forms glasanja:', err);
       }
